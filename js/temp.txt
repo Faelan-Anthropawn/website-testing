@@ -1,1 +1,1 @@
-buffer file ignore
+dont ask
