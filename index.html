@@ -86,41 +86,44 @@ document.getElementById("render").onclick = async () => {
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
 
-  const BAR_COUNT = bufferLength;
-  const BAR_WIDTH = (WIDTH / BAR_COUNT) * 2.5;
+  const BAR_COUNT = 64; // controls thickness & coverage
+const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-  function draw() {
-    analyser.getByteFrequencyData(dataArray);
+function draw() {
+  requestAnimationFrame(draw);
 
-    // background
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  analyser.getByteFrequencyData(dataArray);
 
-    let x = 0;
-    for (let i = 0; i < BAR_COUNT; i++) {
-      const barHeight = dataArray[i];
+  // 1️⃣ CLEAR FRAME COMPLETELY
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-      // colorful coloring logic (from the CodePen)
-      const r = barHeight + (25 * (i / BAR_COUNT));
-      const g = 250 * (i / BAR_COUNT);
-      const b = 50;
+  // 2️⃣ DRAW BACKGROUND IMAGE
+  ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
 
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      ctx.fillRect(
-        x,
-        HEIGHT - barHeight,
-        BAR_WIDTH,
-        barHeight
-      );
+  // 3️⃣ BAR GEOMETRY
+  const barWidth = WIDTH / BAR_COUNT;
+  const step = Math.floor(dataArray.length / BAR_COUNT);
 
-      x += BAR_WIDTH + 1;
-    }
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const v = dataArray[i * step] / 255;
+    const barHeight = v * (HEIGHT * 0.45);
 
-    // draw static image under or above bars
-    ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
+    // CodePen-style color ramp
+    const r = Math.floor(255 * v);
+    const g = Math.floor(200 * (i / BAR_COUNT));
+    const b = 100;
 
-    requestAnimationFrame(draw);
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+
+    ctx.fillRect(
+      i * barWidth,
+      HEIGHT - barHeight,
+      barWidth * 0.9,
+      barHeight
+    );
   }
+}
+
 
   draw();
 
@@ -139,6 +142,7 @@ document.getElementById("render").onclick = async () => {
 </script>
 </body>
 </html>
+
 
 
 
