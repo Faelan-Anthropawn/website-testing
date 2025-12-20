@@ -83,12 +83,18 @@ document.getElementById("render").onclick = async () => {
   const gain = audioCtx.createGain();
   gain.gain.value = 1;
 
+  const mediaDest = audioCtx.createMediaStreamDestination();
+
   source.connect(analyser);
   analyser.connect(gain);
+
+  // route audio to BOTH speakers and recorder
   gain.connect(audioCtx.destination);
+  gain.connect(mediaDest);
 
   const canvasStream = canvas.captureStream(FPS);
-  const audioStream = audioCtx.destination.stream;
+  const audioStream = mediaDest.stream;
+
 
   const stream = new MediaStream([
     ...canvasStream.getVideoTracks(),
@@ -156,5 +162,6 @@ document.getElementById("render").onclick = async () => {
 
 </body>
 </html>
+
 
 
