@@ -32,6 +32,27 @@
 <button id="render">Render Video</button>
 
 <script>
+const WIDTH = 1280;
+const HEIGHT = 720;
+const FPS = 60;
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+async function loadImage(src) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.src = src;
+  });
+}
+
+async function loadAudio(ctx, src) {
+  const res = await fetch(src);
+  const buf = await res.arrayBuffer();
+  return ctx.decodeAudioData(buf);
+}
+
 document.getElementById("render").onclick = async () => {
   console.log("Render clicked");
 
@@ -60,11 +81,10 @@ document.getElementById("render").onclick = async () => {
   gain.connect(mediaDest);
 
   const canvasStream = canvas.captureStream(FPS);
-  const audioStream = mediaDest.stream;
 
   const stream = new MediaStream([
     ...canvasStream.getVideoTracks(),
-    ...audioStream.getAudioTracks()
+    ...mediaDest.stream.getAudioTracks()
   ]);
 
   const recorder = new MediaRecorder(stream, {
@@ -77,55 +97,44 @@ document.getElementById("render").onclick = async () => {
   const chunks = [];
   recorder.ondataavailable = e => chunks.push(e.data);
 
-  // start audio + recorder after one render frame
-  requestAnimationFrame(() => {
-    recorder.start();
-    source.start();
-  });
+  const BAR_COUNT = 64;
+  const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
+  function draw() {
+    requestAnimationFrame(draw);
 
-  const BAR_COUNT = 64; // controls thickness & coverage
-const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataArray);
 
-function draw() {
-  requestAnimationFrame(draw);
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
 
-  analyser.getByteFrequencyData(dataArray);
+    const barWidth = WIDTH / BAR_COUNT;
+    const step = Math.max(1, Math.floor(dataArray.length / BAR_COUNT));
 
-  // 1️⃣ CLEAR FRAME COMPLETELY
-  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const v = dataArray[i * step] / 255;
+      const h = v * (HEIGHT * 0.45);
 
-  // 2️⃣ DRAW BACKGROUND IMAGE
-  ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
+      const r = Math.floor(255 * v);
+      const g = Math.floor(200 * (i / BAR_COUNT));
+      const b = 100;
 
-  // 3️⃣ BAR GEOMETRY
-  const barWidth = WIDTH / BAR_COUNT;
-  const step = Math.floor(dataArray.length / BAR_COUNT);
-
-  for (let i = 0; i < BAR_COUNT; i++) {
-    const v = dataArray[i * step] / 255;
-    const barHeight = v * (HEIGHT * 0.45);
-
-    // CodePen-style color ramp
-    const r = Math.floor(255 * v);
-    const g = Math.floor(200 * (i / BAR_COUNT));
-    const b = 100;
-
-    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-
-    ctx.fillRect(
-      i * barWidth,
-      HEIGHT - barHeight,
-      barWidth * 0.9,
-      barHeight
-    );
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fillRect(
+        i * barWidth,
+        HEIGHT - h,
+        barWidth * 0.9,
+        h
+      );
+    }
   }
-}
 
-
+  // start everything in the correct order
   draw();
+  recorder.start();
+  source.start();
+
+  setTimeout(() => recorder.stop(), audioBuffer.duration * 1000);
 
   recorder.onstop = () => {
     const blob = new Blob(chunks, { type: "video/webm" });
@@ -136,14 +145,8 @@ function draw() {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  setTimeout(() => recorder.stop(), audioBuffer.duration * 1000);
 };
 </script>
+
 </body>
 </html>
-
-
-
-
-
