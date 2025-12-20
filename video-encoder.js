@@ -811,140 +811,132 @@ function audioBufferToWav(audioBuffer) {
     return new Blob([buffer], { type: 'audio/wav' });
 }
 
-async function generateVideoWithDeterministicFrames(options) {
-    const { width, height, fps, totalFrames, frequencyDataPerFrame, songTitle, creatorName, image, audioBuffer, onProgress, fontFamily, visualEffects } = options;
-    
-    const renderCanvas = document.createElement('canvas');
-    renderCanvas.width = width;
-    renderCanvas.height = height;
-    const renderCtx = renderCanvas.getContext('2d', { willReadFrequently: true });
-    
-    const videoStream = renderCanvas.captureStream(fps);
-    const videoTrack = videoStream.getVideoTracks()[0];
-    
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const audioSource = audioContext.createBufferSource();
-    audioSource.buffer = audioBuffer;
-    const audioDestination = audioContext.createMediaStreamDestination();
-    audioSource.connect(audioDestination);
-    audioSource.connect(audioContext.destination);
-    
-    const combinedStream = new MediaStream([
-        ...videoStream.getVideoTracks(),
-        ...audioDestination.stream.getAudioTracks()
-    ]);
-    
-    const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2')
-        ? 'video/mp4;codecs=avc1.42E01E,mp4a.40.2'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
-            ? 'video/webm;codecs=vp9,opus'
-            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-                ? 'video/webm;codecs=vp8,opus'
-                : 'video/webm';
-    
-    const isMP4 = mimeType.startsWith('video/mp4');
-    
-    const videoBitrate = width >= 3840 ? 35000000 : 
-                        width >= 2560 ? 16000000 : 
-                        width >= 1920 ? 8000000 : 5000000;
-    
-    const mediaRecorder = new MediaRecorder(combinedStream, {
-        mimeType: mimeType,
-        videoBitsPerSecond: videoBitrate,
-        audioBitsPerSecond: 192000
+async function generateVideoWithWebCodecs({
+    width,
+    height,
+    fps,
+    totalFrames,
+    frequencyDataPerFrame,
+    songTitle,
+    creatorName,
+    image,
+    audioBuffer,
+    fontFamily,
+    visualEffects,
+    onProgress
+}) {
+    if (!window.VideoEncoder || !window.AudioEncoder) {
+        throw new Error("WebCodecs not supported (Chrome / Edge required)");
+    }
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    const mp4box = MP4Box.createFile();
+    let videoTrackId = null;
+    let audioTrackId = null;
+
+    const videoSamples = [];
+    const audioSamples = [];
+
+    const videoEncoder = new VideoEncoder({
+        output: chunk => videoSamples.push(chunk),
+        error: e => { throw e; }
     });
-    
-    const videoChunks = [];
-    mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-            videoChunks.push(e.data);
+
+    videoEncoder.configure({
+        codec: "avc1.42E01E",
+        width,
+        height,
+        framerate: fps,
+        bitrate: width >= 1920 ? 8_000_000 : 4_000_000
+    });
+
+    for (let i = 0; i < totalFrames; i++) {
+        drawFrame(
+            canvas,
+            ctx,
+            width,
+            height,
+            frequencyDataPerFrame[i],
+            songTitle,
+            creatorName,
+            image,
+            i,
+            fps,
+            fontFamily,
+            visualEffects
+        );
+
+        const bitmap = await createImageBitmap(canvas);
+        const frame = new VideoFrame(bitmap, {
+            timestamp: Math.round((i / fps) * 1_000_000)
+        });
+
+        videoEncoder.encode(frame);
+        frame.close();
+        bitmap.close();
+
+        onProgress?.(i + 1, totalFrames);
+        await Promise.resolve();
+    }
+
+    await videoEncoder.flush();
+
+    const audioEncoder = new AudioEncoder({
+        output: chunk => audioSamples.push(chunk),
+        error: e => { throw e; }
+    });
+
+    audioEncoder.configure({
+        codec: "mp4a.40.2",
+        sampleRate: audioBuffer.sampleRate,
+        numberOfChannels: audioBuffer.numberOfChannels,
+        bitrate: 192000
+    });
+
+    const channels = [];
+    for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+        channels.push(audioBuffer.getChannelData(c));
+    }
+
+    const interleaved = new Float32Array(audioBuffer.length * audioBuffer.numberOfChannels);
+    for (let i = 0; i < audioBuffer.length; i++) {
+        for (let c = 0; c < channels.length; c++) {
+            interleaved[i * channels.length + c] = channels[c][i];
         }
+    }
+
+    const audioData = new AudioData({
+        format: "f32",
+        sampleRate: audioBuffer.sampleRate,
+        numberOfFrames: audioBuffer.length,
+        numberOfChannels: audioBuffer.numberOfChannels,
+        timestamp: 0,
+        data: interleaved
+    });
+
+    audioEncoder.encode(audioData);
+    await audioEncoder.flush();
+    audioData.close();
+
+    mp4box.onReady = info => {
+        videoTrackId = mp4box.addTrack(info.videoTracks[0]);
+        audioTrackId = mp4box.addTrack(info.audioTracks[0]);
     };
-    
-    audioSource.start(0);
-    
-    return new Promise((resolve, reject) => {
-        mediaRecorder.onstop = () => {
-            audioContext.close();
-            const blobType = isMP4 ? 'video/mp4' : 'video/webm';
-            const videoBlob = new Blob(videoChunks, { type: blobType });
-            resolve({ blob: videoBlob, codec: mimeType, isMP4: isMP4 });
-        };
-        
-        mediaRecorder.onerror = (e) => {
-            reject(new Error('MediaRecorder error: ' + e.error));
-        };
-        
-        mediaRecorder.start(1000);
-        
-        const frameDurationMs = 1000 / fps;
-        let frameIndex = 0;
-        let startTime = performance.now();
-        let rafId = null;
-        let useRaf = true;
-        
-        function renderFrame() {
-            if (frameIndex >= totalFrames) {
-                const actualDuration = performance.now() - startTime;
-                const expectedDuration = totalFrames * frameDurationMs;
-                const driftMs = actualDuration - expectedDuration;
-                
-                if (driftMs < -100) {
-                    const waitTime = Math.abs(driftMs);
-                    setTimeout(() => {
-                        mediaRecorder.stop();
-                    }, waitTime);
-                } else {
-                    mediaRecorder.stop();
-                }
-                return;
-            }
-            
-            try {
-                drawFrame(
-                  renderCanvas,
-                  renderCtx,
-                  width,
-                  height,
-                  frequencyDataPerFrame[frameIndex],
-                  songTitle,
-                  creatorName,
-                  image,
-                  frameIndex,
-                  fps,
-                  fontFamily,
-                  visualEffects
-                );
-                
-                if (videoTrack.requestFrame) {
-                    videoTrack.requestFrame();
-                }
-            } catch (err) {
-                console.error('Frame render error:', err);
-            }
-            
-            frameIndex++;
-            
-            if (onProgress) {
-                onProgress(frameIndex, totalFrames);
-            }
-            
-            const elapsedTime = performance.now() - startTime;
-            const expectedTime = frameIndex * frameDurationMs;
-            const drift = elapsedTime - expectedTime;
-            const nextDelay = Math.max(0, frameDurationMs - drift);
-            
-            if (useRaf && nextDelay < 16) {
-                rafId = requestAnimationFrame(renderFrame);
-            } else if (nextDelay > 0) {
-                setTimeout(renderFrame, nextDelay);
-            } else {
-                queueMicrotask(renderFrame);
-            }
-        }
-        
-        renderFrame();
-    });
+
+    mp4box.onError = e => { throw e; };
+
+    for (const chunk of videoSamples) {
+        mp4box.addSample(videoTrackId, chunk);
+    }
+
+    for (const chunk of audioSamples) {
+        mp4box.addSample(audioTrackId, chunk);
+    }
+
+    const mp4Buffer = mp4box.flush();
+    return new Blob([mp4Buffer], { type: "video/mp4" });
 }
 
 videoEncodeButton.addEventListener('click', async () => {
@@ -999,7 +991,7 @@ videoEncodeButton.addEventListener('click', async () => {
         
         let lastLoggedSecond = -1;
         
-        const result = await generateVideoWithDeterministicFrames({
+        const blob = await generateVideoWithWebCodecs({
             width,
             height,
             fps,
@@ -1022,6 +1014,7 @@ videoEncodeButton.addEventListener('click', async () => {
                 }
             }
         });
+        const videoUrl = URL.createObjectURL(blob);
         
         logToVideoConsole(`Video codec used: ${result.codec}`, 'info');
         logToVideoConsole('Video with audio rendered', 'success');
