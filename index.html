@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Audio Visualizer Export</title>
+<style>
+  body {
+    background: #0f0f0f;
+    color: #e5e5e5;
+    font-family: system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 20px;
+  }
+  canvas {
+    border-radius: 12px;
+    background: black;
+  }
+  button {
+    padding: 10px 16px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<h2>Browser Audio Visualizer → Video</h2>
+<canvas id="canvas" width="1280" height="720"></canvas>
+<button id="render">Render Video</button>
+
+<script>
+const WIDTH = 1280;
+const HEIGHT = 720;
+const BAR_COLOR = "#22c55e";
+const FPS = 60;
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+async function loadImage(src) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.src = src;
+  });
+}
+
+async function loadAudio(src) {
+  const ctx = new AudioContext();
+  const res = await fetch(src);
+  const buf = await res.arrayBuffer();
+  return ctx.decodeAudioData(buf);
+}
+
+function drawBars(freqData) {
+  const barCount = freqData.length;
+  const barWidth = WIDTH / barCount;
+
+  ctx.fillStyle = BAR_COLOR;
+
+  for (let i = 0; i < barCount; i++) {
+    const value = freqData[i] / 255;
+    const barHeight = value * HEIGHT * 0.4;
+    ctx.fillRect(
+      i * barWidth,
+      HEIGHT - barHeight,
+      barWidth - 1,
+      barHeight
+    );
+  }
+}
+
+document.getElementById("render").onclick = async () => {
+  const img = await loadImage("image.png");
+  const audioCtx = new AudioContext();
+  const audioBuffer = await loadAudio("audio.mp3");
+
+  const source = audioCtx.createBufferSource();
+  source.buffer = audioBuffer;
+
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  const freqData = new Uint8Array(analyser.frequencyBinCount);
+
+  source.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  const stream = canvas.captureStream(FPS);
+  const recorder = new MediaRecorder(stream, {
+    mimeType: "video/webm;codecs=vp9"
+  });
+
+  const chunks = [];
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.start();
+
+  source.start();
+  const start = audioCtx.currentTime;
+
+  function frame() {
+    ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
+    analyser.getByteFrequencyData(freqData);
+    drawBars(freqData);
+
+    if (audioCtx.currentTime - start < audioBuffer.duration) {
+      requestAnimationFrame(frame);
+    } else {
+      recorder.stop();
+    }
+  }
+
+  frame();
+
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: "video/webm" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "visualizer.webm";
+    a.click();
+  };
+};
+</script>
+
+</body>
+</html>
