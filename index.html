@@ -64,9 +64,13 @@ async function loadAudio(ctx, src) {
 }
 
 document.getElementById("render").onclick = async () => {
+  console.log("Render clicked");
+
   const img = await loadImage("image.png");
 
   const audioCtx = new AudioContext();
+  await audioCtx.resume(); // ✅ REQUIRED
+
   const audioBuffer = await loadAudio(audioCtx, "audio.mp3");
 
   const source = audioCtx.createBufferSource();
@@ -83,10 +87,9 @@ document.getElementById("render").onclick = async () => {
   analyser.connect(gain);
   gain.connect(audioCtx.destination);
 
-  /* ---- STREAM COMBINE (CRITICAL) ---- */
-
   const canvasStream = canvas.captureStream(FPS);
   const audioStream = audioCtx.destination.stream;
+
   const stream = new MediaStream([
     ...canvasStream.getVideoTracks(),
     ...audioStream.getAudioTracks()
@@ -99,15 +102,17 @@ document.getElementById("render").onclick = async () => {
 
   const chunks = [];
   recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.start();
 
+  /* ---- START AUDIO FIRST ---- */
   source.start();
+
+  /* ---- START RECORDING NEXT FRAME ---- */
+  requestAnimationFrame(() => recorder.start());
 
   const freqData = new Uint8Array(analyser.frequencyBinCount);
 
   function draw() {
     ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
-
     analyser.getByteFrequencyData(freqData);
 
     const usableBins = freqData.length - MIN_BIN;
@@ -117,7 +122,7 @@ document.getElementById("render").onclick = async () => {
 
     for (let i = MIN_BIN; i < freqData.length; i++) {
       const v = freqData[i] / 255;
-      const scaled = Math.sqrt(v); // perceptual scaling
+      const scaled = Math.sqrt(v);
       const h = scaled * MAX_HEIGHT;
 
       ctx.fillRect(
@@ -138,14 +143,18 @@ document.getElementById("render").onclick = async () => {
   recorder.onstop = () => {
     const blob = new Blob(chunks, { type: "video/webm" });
     const url = URL.createObjectURL(blob);
+
     const a = document.createElement("a");
     a.href = url;
     a.download = "visualizer.webm";
     a.click();
+
+    URL.revokeObjectURL(url);
   };
 };
 </script>
 
 </body>
 </html>
+
 
