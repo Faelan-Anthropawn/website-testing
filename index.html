@@ -32,44 +32,13 @@
 <button id="render">Render Video</button>
 
 <script>
-/* -------- CONFIG -------- */
-
-const WIDTH = 1280;
-const HEIGHT = 720;
-const FPS = 60;
-const BAR_COLOR = "#22c55e";
-
-const FFT_SIZE = 2048;
-const MIN_BIN = 4;          // ignore sub-bass/DC
-const MAX_HEIGHT = HEIGHT * 0.35;
-const SMOOTHING = 0.85;
-
-/* ------------------------ */
-
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-
-async function loadImage(src) {
-  return new Promise(res => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.src = src;
-  });
-}
-
-async function loadAudio(ctx, src) {
-  const res = await fetch(src);
-  const buf = await res.arrayBuffer();
-  return ctx.decodeAudioData(buf);
-}
-
 document.getElementById("render").onclick = async () => {
   console.log("Render clicked");
 
   const img = await loadImage("image.png");
 
   const audioCtx = new AudioContext();
-  await audioCtx.resume(); // ✅ REQUIRED
+  await audioCtx.resume();
 
   const audioBuffer = await loadAudio(audioCtx, "audio.mp3");
 
@@ -77,8 +46,8 @@ document.getElementById("render").onclick = async () => {
   source.buffer = audioBuffer;
 
   const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = FFT_SIZE;
-  analyser.smoothingTimeConstant = SMOOTHING;
+  analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.8;
 
   const gain = audioCtx.createGain();
   gain.gain.value = 1;
@@ -87,14 +56,11 @@ document.getElementById("render").onclick = async () => {
 
   source.connect(analyser);
   analyser.connect(gain);
-
-  // route audio to BOTH speakers and recorder
   gain.connect(audioCtx.destination);
   gain.connect(mediaDest);
 
   const canvasStream = canvas.captureStream(FPS);
   const audioStream = mediaDest.stream;
-
 
   const stream = new MediaStream([
     ...canvasStream.getVideoTracks(),
@@ -102,66 +68,78 @@ document.getElementById("render").onclick = async () => {
   ]);
 
   const recorder = new MediaRecorder(stream, {
-    mimeType: "video/webm;codecs=vp9,opus",
+    mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+      ? "video/webm;codecs=vp9,opus"
+      : "video/webm;codecs=vp8,opus",
     videoBitsPerSecond: 6_000_000
   });
 
   const chunks = [];
   recorder.ondataavailable = e => chunks.push(e.data);
 
-  /* ---- START AUDIO FIRST ---- */
-  source.start();
+  // start audio + recorder after one render frame
+  requestAnimationFrame(() => {
+    recorder.start();
+    source.start();
+  });
 
-  /* ---- START RECORDING NEXT FRAME ---- */
-  requestAnimationFrame(() => recorder.start());
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
 
-  const freqData = new Uint8Array(analyser.frequencyBinCount);
+  const BAR_COUNT = bufferLength;
+  const BAR_WIDTH = (WIDTH / BAR_COUNT) * 2.5;
 
   function draw() {
-    ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
-    analyser.getByteFrequencyData(freqData);
+    analyser.getByteFrequencyData(dataArray);
 
-    const usableBins = freqData.length - MIN_BIN;
-    const barWidth = WIDTH / usableBins;
+    // background
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    ctx.fillStyle = BAR_COLOR;
+    let x = 0;
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const barHeight = dataArray[i];
 
-    for (let i = MIN_BIN; i < freqData.length; i++) {
-      const v = freqData[i] / 255;
-      const scaled = Math.sqrt(v);
-      const h = scaled * MAX_HEIGHT;
+      // colorful coloring logic (from the CodePen)
+      const r = barHeight + (25 * (i / BAR_COUNT));
+      const g = 250 * (i / BAR_COUNT);
+      const b = 50;
 
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fillRect(
-        (i - MIN_BIN) * barWidth,
-        HEIGHT - h,
-        barWidth * 0.9,
-        h
+        x,
+        HEIGHT - barHeight,
+        BAR_WIDTH,
+        barHeight
       );
+
+      x += BAR_WIDTH + 1;
     }
+
+    // draw static image under or above bars
+    ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
 
     requestAnimationFrame(draw);
   }
 
   draw();
 
-  setTimeout(() => recorder.stop(), audioBuffer.duration * 1000);
-
   recorder.onstop = () => {
     const blob = new Blob(chunks, { type: "video/webm" });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement("a");
     a.href = url;
     a.download = "visualizer.webm";
     a.click();
-
     URL.revokeObjectURL(url);
   };
+
+  setTimeout(() => recorder.stop(), audioBuffer.duration * 1000);
 };
 </script>
-
 </body>
 </html>
+
 
 
 
