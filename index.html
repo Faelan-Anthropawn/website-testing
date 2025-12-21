@@ -1,150 +1,684 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Offline Audio Visualizer Export</title>
-<style>
-  body {
-    background: #0f0f0f;
-    color: #e5e5e5;
-    font-family: system-ui, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    padding: 20px;
-  }
-  canvas {
-    border-radius: 12px;
-    background: black;
-  }
-  button {
-    padding: 10px 16px;
-    font-size: 16px;
-    cursor: pointer;
-  }
-</style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline Audio Visualizer Export</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fondamento:ital@0;1&family=Georgia&family=Courier+Prime&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": { 
+                            DEFAULT: "#6366f1",
+                            600: "#4f46e5",
+                            700: "#4338ca"
+                        }
+                    },
+                    fontFamily: {
+                        "sans": ["Inter", "system-ui", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --transition-fast: 150ms;
+            --transition-normal: 250ms;
+        }
+
+        body {
+            @apply bg-slate-900;
+        }
+
+        .card {
+            @apply bg-slate-800/50 border border-slate-700/50 rounded-xl backdrop-blur-sm transition-all;
+        }
+
+        .card:hover {
+            @apply border-primary/50 shadow-lg shadow-primary/10;
+        }
+
+        .btn-primary {
+            @apply bg-gradient-to-br from-primary to-primary-600 text-white font-medium transition-all hover:shadow-lg hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0;
+        }
+
+        .btn-secondary {
+            @apply bg-slate-700/50 border border-slate-600/50 text-slate-200 font-medium transition-all hover:bg-slate-600/50 hover:border-primary/50;
+        }
+
+        .input-field {
+            @apply bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 rounded-lg transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none;
+        }
+
+        input[type="color"].input-field {
+            @apply h-10 cursor-pointer;
+        }
+
+        .section-title {
+            @apply text-xs font-bold text-slate-400 uppercase tracking-wider;
+        }
+
+        .canvas-container {
+            @apply card p-4 h-full flex items-center justify-center overflow-hidden;
+        }
+
+        canvas {
+            @apply rounded-lg;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+    </style>
 </head>
-<body>
+<body class="dark bg-slate-900 text-slate-100">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-gradient-to-br from-slate-800 to-slate-900 border-b border-slate-700/50">
+            <div class="px-8 py-6">
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-primary via-blue-400 to-primary bg-clip-text text-transparent">
+                    Offline Audio Visualizer → Video
+                </h1>
+                <p class="text-slate-400 text-sm mt-1">Create stunning video visualizations with frequency analysis</p>
+            </div>
+        </header>
 
-<h2>Offline Audio Visualizer → Video</h2>
-<canvas id="canvas" width="1280" height="720"></canvas>
-<button id="render">Render Video (Offline)</button>
+        <!-- Main Content -->
+        <main class="flex-1 overflow-hidden">
+            <div class="h-full flex gap-6 p-6">
+                <!-- LEFT SIDEBAR -->
+                <div class="w-80 flex flex-col gap-4 overflow-y-auto">
+                    <!-- Audio & Image Section -->
+                    <div class="card p-6">
+                        <h2 class="section-title mb-4">Audio & Image</h2>
+                        <div class="space-y-3">
+                            <label class="block">
+                                <span class="text-sm text-slate-300 mb-2 block">Audio File</span>
+                                <input type="file" id="audioFile" accept="audio/*" class="input-field w-full file:mr-4 file:px-4 file:py-2 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-600" />
+                            </label>
+                            <label class="block">
+                                <span class="text-sm text-slate-300 mb-2 block">Background Image</span>
+                                <input type="file" id="imageFile" accept="image/*" class="input-field w-full file:mr-4 file:px-4 file:py-2 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-600" />
+                            </label>
+                        </div>
+                    </div>
 
-<script>
-const WIDTH = 1280;
-const HEIGHT = 720;
-const FPS = 60;
-const BAR_COUNT = 64;
+                    <!-- Metadata Section -->
+                    <div class="card p-6">
+                        <h2 class="section-title mb-4">Metadata</h2>
+                        <div class="space-y-3">
+                            <input type="text" id="songName" placeholder="Song Name" class="input-field w-full px-3 py-2" />
+                            <input type="text" id="artistName" placeholder="Artist Name" class="input-field w-full px-3 py-2" />
+                            <select id="fontFamily" class="input-field w-full px-3 py-2">
+                                <option value="Fondamento">Fondamento</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Arial">Arial</option>
+                                <option value="Courier Prime">Courier Prime</option>
+                            </select>
+                        </div>
+                    </div>
 
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+                    <!-- Elements Section -->
+                    <div class="card p-6 flex-1 flex flex-col">
+                        <h2 class="section-title mb-4">Text Elements</h2>
+                        <button id="spawnElement" class="btn-primary w-full py-2 mb-4 rounded-lg">
+                            + Add Text Element
+                        </button>
+                        <div id="elementsList" class="space-y-2 flex-1 overflow-y-auto">
+                            <div class="text-slate-500 text-xs text-center py-8">No elements yet</div>
+                        </div>
+                    </div>
+                </div>
 
-async function loadImage(src) {
-  return new Promise(res => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.src = src;
-  });
-}
+                <!-- CENTER: CANVAS -->
+                <div class="flex-1 min-w-0 min-h-0">
+                    <div class="canvas-container h-full w-full">
+                        <canvas id="canvas" width="1280" height="720" style="aspect-ratio: 16/9;"></canvas>
+                    </div>
+                </div>
 
-async function loadAudioBuffer(src) {
-  const res = await fetch(src);
-  const buf = await res.arrayBuffer();
-  const ctx = new AudioContext();
-  return ctx.decodeAudioData(buf);
-}
+                <!-- RIGHT SIDEBAR -->
+                <div class="w-80 flex flex-col gap-4 overflow-y-auto">
+                    <!-- Element Editor -->
+                    <div id="selectedElementControls" class="hidden card p-6">
+                        <h2 class="section-title mb-4">Edit Element</h2>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-sm text-slate-300 block mb-2">Text</label>
+                                <input type="text" id="elementText" placeholder="Enter text" class="input-field w-full px-3 py-2" />
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-sm text-slate-300 block mb-2">Size</label>
+                                    <input type="number" id="elementSize" min="8" max="200" value="48" class="input-field w-full px-3 py-2" />
+                                </div>
+                                <div>
+                                    <label class="text-sm text-slate-300 block mb-2">Color</label>
+                                    <input type="color" id="elementColor" value="#ffffff" class="input-field w-full" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-sm text-slate-300 block mb-2">Font</label>
+                                <select id="elementFont" class="input-field w-full px-3 py-2">
+                                    <option value="Fondamento">Fondamento</option>
+                                    <option value="Georgia">Georgia</option>
+                                    <option value="Arial">Arial</option>
+                                    <option value="Courier Prime">Courier Prime</option>
+                                </select>
+                            </div>
+                            <button id="deleteElement" class="w-full bg-gradient-to-br from-red-600 to-red-700 text-white font-medium py-2 rounded-lg hover:shadow-lg hover:shadow-red/40 transition-all">
+                                Delete Element
+                            </button>
+                        </div>
+                    </div>
 
-document.getElementById("render").onclick = async () => {
-  const img = await loadImage("image.png");
-  const audioBuffer = await loadAudioBuffer("audio.mp3");
+                    <!-- Hidden Export Options (used by modal) -->
+                    <div style="display: none;">
+                        <select id="resolution" class="input-field w-full px-3 py-2">
+                            <option value="640x360">640×360 (360p)</option>
+                            <option value="1280x720" selected>1280×720 (720p)</option>
+                            <option value="1920x1080">1920×1080 (1080p)</option>
+                            <option value="2560x1440">2560×1440 (1440p)</option>
+                        </select>
+                        <select id="framerate" class="input-field w-full px-3 py-2">
+                            <option value="30">30 FPS</option>
+                            <option value="60">60 FPS</option>
+                            <option value="120">120 FPS</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </main>
+        <!-- Export Button (Fixed) -->
+        <button id="exportBtn" class="fixed bottom-6 right-6 btn-primary px-6 py-3 rounded-lg font-semibold flex items-center gap-2 shadow-lg z-40">
+            <span class="material-symbols-outlined">download</span>
+            Export
+        </button>
 
-  const duration = audioBuffer.duration;
-  const totalFrames = Math.ceil(duration * FPS);
+        <!-- Export Modal -->
+        <div id="exportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div class="card p-8 w-full max-w-sm mx-4">
+                <h2 class="text-2xl font-bold text-white mb-6">Export Video</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-sm text-slate-300 block mb-2">Resolution</label>
+                        <select id="exportResolution" class="input-field w-full px-3 py-2">
+                            <option value="640x360">640×360 (360p)</option>
+                            <option value="1280x720" selected>1280×720 (720p)</option>
+                            <option value="1920x1080">1920×1080 (1080p)</option>
+                            <option value="2560x1440">2560×1440 (1440p)</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="text-sm text-slate-300 block mb-2">Frame Rate</label>
+                        <select id="exportFramerate" class="input-field w-full px-3 py-2">
+                            <option value="30">30 FPS</option>
+                            <option value="60" selected>60 FPS</option>
+                            <option value="120">120 FPS</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex gap-3 pt-4">
+                        <button id="exportCancel" class="btn-secondary flex-1 py-3 rounded-lg font-semibold">
+                            Cancel
+                        </button>
+                        <button id="beginRender" class="btn-primary flex-1 py-3 rounded-lg font-semibold">
+                            Begin Render
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-  /* ---------- OFFLINE AUDIO CONTEXT ---------- */
-  const offlineCtx = new OfflineAudioContext(
-    1,
-    audioBuffer.length,
-    audioBuffer.sampleRate
-  );
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        const BAR_COUNT = 64;
+        const FREQ_START_INDEX = 5;
 
-  const source = offlineCtx.createBufferSource();
-  source.buffer = audioBuffer;
+        let customTexts = [];
+        let selectedElementIndex = null;
+        let draggingTextIndex = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        let backgroundImage = null;
+        let audioBuffer = null;
 
-  const analyser = offlineCtx.createAnalyser();
-  analyser.fftSize = 256;
-  analyser.smoothingTimeConstant = 0.8;
+        async function loadImageFromFile(file) {
+            return new Promise((res, rej) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => res(img);
+                    img.onerror = rej;
+                    img.src = e.target.result;
+                };
+                reader.onerror = rej;
+                reader.readAsDataURL(file);
+            });
+        }
 
-  source.connect(analyser);
-  analyser.connect(offlineCtx.destination);
+        async function loadAudioBufferFromFile(file) {
+            const buf = await file.arrayBuffer();
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            return audioCtx.decodeAudioData(buf);
+        }
 
-  source.start(0);
-  await offlineCtx.startRendering();
+        function getResolution() {
+            const res = document.getElementById("resolution").value;
+            const [w, h] = res.split("x").map(Number);
+            return { width: w, height: h };
+        }
 
-  /* ---------- VIDEO RECORDING ---------- */
-  const stream = canvas.captureStream(FPS);
-  const recorder = new MediaRecorder(stream, {
-    mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9"
-      : "video/webm",
-    videoBitsPerSecond: 6_000_000
-  });
+        function getFramerate() {
+            return parseInt(document.getElementById("framerate").value);
+        }
 
-  const chunks = [];
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.start();
+        document.getElementById("imageFile").addEventListener("change", async (e) => {
+            if (e.target.files[0]) {
+                backgroundImage = await loadImageFromFile(e.target.files[0]);
+                drawCanvasPreview(backgroundImage);
+            }
+        });
 
-  const freqData = new Uint8Array(analyser.frequencyBinCount);
-  const step = Math.max(1, Math.floor(freqData.length / BAR_COUNT));
+        document.getElementById("audioFile").addEventListener("change", async (e) => {
+            if (e.target.files[0]) {
+                audioBuffer = await loadAudioBufferFromFile(e.target.files[0]);
+            }
+        });
 
-  /* ---------- FRAME-BY-FRAME RENDER ---------- */
-  for (let frame = 0; frame < totalFrames; frame++) {
-    const t = frame / FPS;
+        function updateElementsList() {
+            const list = document.getElementById("elementsList");
+            if (customTexts.length === 0) {
+                list.innerHTML = '<div class="text-slate-500 text-xs text-center py-8">No elements yet</div>';
+                return;
+            }
 
-    analyser.getByteFrequencyData(freqData);
+            list.innerHTML = customTexts.map((text, idx) => `
+                <div class="card p-3 cursor-pointer transition-all ${selectedElementIndex === idx ? 'bg-primary/20 border-primary/50' : 'hover:bg-slate-700/50'}" onclick="selectElement(${idx})">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm truncate">"${text.text.substring(0, 20)}${text.text.length > 20 ? '...' : ''}"</span>
+                        <button onclick="deleteElementAt(${idx}); event.stopPropagation();" class="text-slate-400 hover:text-red-400 text-lg leading-none">×</button>
+                    </div>
+                </div>
+            `).join('');
+        }
 
-    ctx.clearRect(0, 0, WIDTH, HEIGHT);
-    ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
+        function selectElement(idx) {
+            selectedElementIndex = idx;
+            const text = customTexts[idx];
 
-    const barWidth = WIDTH / BAR_COUNT;
+            document.getElementById("elementText").value = text.text;
+            document.getElementById("elementSize").value = text.size;
+            document.getElementById("elementColor").value = text.color;
+            document.getElementById("elementFont").value = text.font;
 
-    for (let i = 0; i < BAR_COUNT; i++) {
-      const v = freqData[i * step] / 255;
-      const h = v * (HEIGHT * 0.45);
+            document.getElementById("selectedElementControls").classList.remove("hidden");
+            updateElementsList();
+            drawCanvasPreview(backgroundImage);
+        }
 
-      const r = Math.floor(255 * v);
-      const g = Math.floor(200 * (i / BAR_COUNT));
-      const b = 120;
+        function deleteElementAt(idx) {
+            customTexts.splice(idx, 1);
+            if (selectedElementIndex === idx) {
+                selectedElementIndex = null;
+                document.getElementById("selectedElementControls").classList.add("hidden");
+            }
+            updateElementsList();
+            drawCanvasPreview(backgroundImage);
+        }
 
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      ctx.fillRect(
-        i * barWidth,
-        HEIGHT - h,
-        barWidth * 0.9,
-        h
-      );
-    }
+        document.getElementById("spawnElement").onclick = () => {
+            customTexts.push({
+                text: "Text",
+                x: 50,
+                y: 50 + (customTexts.length * 40),
+                size: 48,
+                color: "#ffffff",
+                font: "Arial"
+            });
+            selectElement(customTexts.length - 1);
+        };
 
-    // wait exactly one frame duration
-    await new Promise(r => setTimeout(r, 1000 / FPS));
-  }
+        document.getElementById("elementText").addEventListener("input", (e) => {
+            if (selectedElementIndex !== null) {
+                customTexts[selectedElementIndex].text = e.target.value;
+                drawCanvasPreview(backgroundImage);
+            }
+        });
 
-  recorder.stop();
+        document.getElementById("elementSize").addEventListener("input", (e) => {
+            if (selectedElementIndex !== null) {
+                customTexts[selectedElementIndex].size = parseInt(e.target.value);
+                drawCanvasPreview(backgroundImage);
+            }
+        });
 
-  recorder.onstop = () => {
-    const blob = new Blob(chunks, { type: "video/webm" });
-    const url = URL.createObjectURL(blob);
+        document.getElementById("elementColor").addEventListener("input", (e) => {
+            if (selectedElementIndex !== null) {
+                customTexts[selectedElementIndex].color = e.target.value;
+                drawCanvasPreview(backgroundImage);
+            }
+        });
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "visualizer_offline.webm";
-    a.click();
+        document.getElementById("elementFont").addEventListener("change", (e) => {
+            if (selectedElementIndex !== null) {
+                customTexts[selectedElementIndex].font = e.target.value;
+                drawCanvasPreview(backgroundImage);
+            }
+        });
 
-    URL.revokeObjectURL(url);
-  };
-};
-</script>
+        document.getElementById("deleteElement").onclick = () => {
+            if (selectedElementIndex !== null) {
+                deleteElementAt(selectedElementIndex);
+            }
+        };
 
+        function drawCanvasPreview(img = null) {
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (img) {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
+
+            customTexts.forEach((textObj, idx) => {
+                ctx.fillStyle = textObj.color;
+                ctx.font = `${textObj.size}px ${textObj.font}`;
+                ctx.textBaseline = "top";
+                ctx.fillText(textObj.text, textObj.x, textObj.y);
+
+                if (idx === selectedElementIndex) {
+                    const metrics = ctx.measureText(textObj.text);
+                    ctx.strokeStyle = "#00ff00";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(textObj.x - 5, textObj.y - 5, metrics.width + 10, textObj.size + 10);
+                }
+            });
+        }
+
+        canvas.addEventListener("mousedown", (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const scaleX = canvas.width / rect.width;
+          const scaleY = canvas.height / rect.height;
+
+          const x = (e.clientX - rect.left) * scaleX;
+          const y = (e.clientY - rect.top) * scaleY;
+
+          for (let i = customTexts.length - 1; i >= 0; i--) {
+            const t = customTexts[i];
+
+            ctx.font = `${t.size}px ${t.font}`;
+            const m = ctx.measureText(t.text);
+
+            const left   = t.x;
+            const right  = t.x + m.width;
+            const top    = t.y - m.actualBoundingBoxAscent;
+            const bottom = t.y + m.actualBoundingBoxDescent;
+
+            if (x >= left && x <= right && y >= top && y <= bottom) {
+              selectElement(i);
+              draggingTextIndex = i;
+              dragOffsetX = x - t.x;
+              dragOffsetY = y - t.y;
+              return;
+            }
+          }
+        });
+
+        window.addEventListener("mouseup", () => {
+          draggingTextIndex = null;
+        });
+
+        canvas.addEventListener("mousemove", (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const scaleX = canvas.width / rect.width;
+          const scaleY = canvas.height / rect.height;
+          const x = (e.clientX - rect.left) * scaleX;
+          const y = (e.clientY - rect.top) * scaleY;
+
+          let overText = false;
+
+          for (const t of customTexts) {
+            ctx.font = `${t.size}px ${t.font}`;
+            const m = ctx.measureText(t.text);
+
+            if (
+              x >= t.x &&
+              x <= t.x + m.width &&
+              y >= t.y - m.actualBoundingBoxAscent &&
+              y <= t.y + m.actualBoundingBoxDescent
+            ) {
+              overText = true;
+              break;
+            }
+          }
+
+          canvas.style.cursor = overText ? "move" : "default";
+        });
+
+
+        canvas.addEventListener("mouseup", () => {
+            draggingTextIndex = null;
+        });
+
+        async function renderVideo() {
+            if (!audioBuffer) {
+                alert("Please load an audio file first");
+                return;
+            }
+
+            const { width, height } = getResolution();
+            const fps = getFramerate();
+            const duration = audioBuffer.duration;
+            const totalFrames = Math.floor(duration * fps);
+
+            const offscreenCanvas = new OffscreenCanvas(width, height);
+            const offCtx = offscreenCanvas.getContext("2d");
+
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+            analyser.fftSize = 256;
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const frames = [];
+
+            const renderBtn = document.getElementById("render");
+            renderBtn.disabled = true;
+            renderBtn.textContent = "Rendering...";
+
+            source.start(0);
+
+            for (let frame = 0; frame < totalFrames; frame++) {
+                analyser.getByteFrequencyData(dataArray);
+
+                offCtx.fillStyle = "#000000";
+                offCtx.fillRect(0, 0, width, height);
+
+                if (backgroundImage) {
+                    offCtx.drawImage(backgroundImage, 0, 0, width, height);
+                }
+
+                const barWidth = width / BAR_COUNT;
+                for (let i = 0; i < BAR_COUNT; i++) {
+                    const freqIndex = FREQ_START_INDEX + Math.floor((i / BAR_COUNT) * (dataArray.length - FREQ_START_INDEX));
+                    const value = dataArray[freqIndex];
+                    const barHeight = (value / 255) * height;
+
+                    offCtx.fillStyle = `hsl(${(i / BAR_COUNT) * 360}, 100%, 50%)`;
+                    offCtx.fillRect(i * barWidth, height - barHeight, barWidth - 2, barHeight);
+                }
+
+                customTexts.forEach((textObj) => {
+                    offCtx.fillStyle = textObj.color;
+                    offCtx.font = `${textObj.size}px ${textObj.font}`;
+                    offCtx.textBaseline = "top";
+                    offCtx.fillText(textObj.text, textObj.x * (width / 1280), textObj.y * (height / 720));
+                });
+
+                const imageData = offCtx.getImageData(0, 0, width, height);
+                frames.push(imageData);
+
+                if (frame % 30 === 0) {
+                    renderBtn.textContent = `Rendering... ${Math.round((frame / totalFrames) * 100)}%`;
+                }
+            }
+
+            const videoCanvas = new OffscreenCanvas(width, height);
+            const videoCtx = videoCanvas.getContext("2d");
+
+            const blob = await new Promise((resolve) => {
+                const mediaRecorder = new MediaRecorder(videoCanvas.convertToBlob({ type: "video/webm" }));
+                mediaRecorder.ondataavailable = (e) => resolve(e.data);
+                mediaRecorder.start();
+
+                setTimeout(() => mediaRecorder.stop(), duration * 1000);
+            });
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${document.getElementById("songName").value || "audio"}.webm`;
+            a.click();
+
+            renderBtn.disabled = false;
+            renderBtn.textContent = "Begin Render";
+            document.getElementById("exportModal").classList.add("hidden");
+        }
+
+        // Modal controls
+        const exportBtn = document.getElementById("exportBtn");
+        const exportModal = document.getElementById("exportModal");
+        const exportCancel = document.getElementById("exportCancel");
+        const beginRender = document.getElementById("beginRender");
+
+        exportBtn.addEventListener("click", () => {
+            exportModal.classList.remove("hidden");
+        });
+
+        exportCancel.addEventListener("click", () => {
+            exportModal.classList.add("hidden");
+        });
+
+        exportModal.addEventListener("click", (e) => {
+            if (e.target === exportModal) {
+                exportModal.classList.add("hidden");
+            }
+        });
+
+        beginRender.addEventListener("click", async () => {
+            const renderBtn = beginRender;
+            if (!audioBuffer) {
+                alert("Please load an audio file first");
+                return;
+            }
+
+            const res = document.getElementById("exportResolution").value;
+            const [w, h] = res.split("x").map(Number);
+            const width = w;
+            const height = h;
+            const fps = parseInt(document.getElementById("exportFramerate").value);
+            const duration = audioBuffer.duration;
+            const totalFrames = Math.floor(duration * fps);
+
+            const offscreenCanvas = new OffscreenCanvas(width, height);
+            const offCtx = offscreenCanvas.getContext("2d");
+
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+            analyser.fftSize = 256;
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const frames = [];
+
+            renderBtn.disabled = true;
+            renderBtn.textContent = "Rendering...";
+
+            source.start(0);
+
+            for (let frame = 0; frame < totalFrames; frame++) {
+                analyser.getByteFrequencyData(dataArray);
+
+                offCtx.fillStyle = "rgba(30,41,59,0.3)";
+                offCtx.fillRect(0, 0, width, height);
+
+                const barWidth = width / BAR_COUNT;
+                const barHeightScale = height / 255;
+
+                for (let i = 0; i < BAR_COUNT; i++) {
+                    const freqIndex = Math.floor((i / BAR_COUNT) * dataArray.length) + FREQ_START_INDEX;
+                    const freqValue = dataArray[freqIndex];
+
+                    offCtx.fillStyle = `hsl(${(i / BAR_COUNT) * 360}, 100%, 50%)`;
+                    const barHeight = freqValue * barHeightScale;
+                    offCtx.fillRect(i * barWidth, height - barHeight, barWidth - 2, barHeight);
+                }
+
+                const scaleX = width / 1280;
+                const scaleY = height / 720;
+                
+                customTexts.forEach(text => {
+                    const scaledSize = Math.round(text.size * scaleX);
+                    const scaledX = text.x * scaleX;
+                    const scaledY = text.y * scaleY;
+                    
+                    offCtx.font = `${scaledSize}px ${text.font}`;
+                    offCtx.fillStyle = text.color;
+                    offCtx.fillText(text.text, scaledX, scaledY);
+                });
+
+                if (backgroundImage) {
+                    offCtx.drawImage(backgroundImage, 0, 0, width, height);
+                }
+
+                const imageData = offCtx.getImageData(0, 0, width, height);
+                frames.push(imageData);
+
+                if (frame % 30 === 0) {
+                    renderBtn.textContent = `Rendering... ${Math.round((frame / totalFrames) * 100)}%`;
+                }
+            }
+
+            const videoCanvas = new OffscreenCanvas(width, height);
+            const videoCtx = videoCanvas.getContext("2d");
+
+            const blob = await new Promise((resolve) => {
+                const mediaRecorder = new MediaRecorder(videoCanvas.convertToBlob({ type: "video/webm" }));
+                mediaRecorder.ondataavailable = (e) => resolve(e.data);
+                mediaRecorder.start();
+
+                setTimeout(() => mediaRecorder.stop(), duration * 1000);
+            });
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${document.getElementById("songName").value || "audio"}.webm`;
+            a.click();
+
+            renderBtn.disabled = false;
+            renderBtn.textContent = "Begin Render";
+            exportModal.classList.add("hidden");
+        });
+
+        drawCanvasPreview();
+    </script>
 </body>
 </html>
