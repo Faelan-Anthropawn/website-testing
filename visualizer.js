@@ -50,68 +50,62 @@ export class Visualizer {
     }
 
     drawBars(ctx, width, height, frequencyData) {
-        const barAreaHeight = height * 0.165;
-        const barWidth = width / this.BAR_COUNT;
-        const gap = barWidth * 0.18;
-        const radius = Math.min(6, barWidth * 0.35);
+    const barAreaHeight = height * 0.5; // increase to fill ~50% of screen
+    const barWidth = width / this.BAR_COUNT;
+    const gap = barWidth * 0.18;
+    const radius = Math.min(6, barWidth * 0.35);
 
-        const fftSize = frequencyData.length;
-        const minBin = this.FREQ_START_INDEX;
-        const maxBin = Math.floor(fftSize * 0.6);
+    const fftSize = frequencyData.length;
+    const minBin = this.FREQ_START_INDEX;
+    const maxBin = Math.floor(fftSize * 0.6);
 
-        ctx.save();
+    const MIN_BAR_HEIGHT = 2; // minimum visible height for enabled bars
 
-        for (let i = 0; i < this.BAR_COUNT; i++) {
-            const t = i / (this.BAR_COUNT - 1);
+    ctx.save();
 
-            // Log-frequency distribution
-            const centerBin = minBin * Math.pow(maxBin / minBin, t);
+    for (let i = 0; i < this.BAR_COUNT; i++) {
+        const t = i / (this.BAR_COUNT - 1);
 
-            // Controlled bin width (prevents flattening)
-            const binWidth = Math.min(
-                12,
-                Math.max(2, Math.floor(4 + t * 6))
-            );
+        // logarithmic + slight linear mix to prevent left bars from repeating
+        const logFactor = 0.8;
+        const centerBin = minBin * Math.pow(maxBin / minBin, t * logFactor) + (maxBin - minBin) * t * (1 - logFactor);
 
-            const startBin = Math.max(minBin, Math.floor(centerBin - binWidth * 0.5));
-            const endBin = Math.min(maxBin, startBin + binWidth);
+        const binWidth = Math.min(12, Math.max(2, Math.floor(4 + t * 6)));
+        const startBin = Math.max(minBin, Math.floor(centerBin - binWidth * 0.5));
+        const endBin = Math.min(maxBin, startBin + binWidth);
 
-            // Peak-based energy (NOT RMS)
-            let peak = 0;
-            for (let b = startBin; b <= endBin; b++) {
-                peak = Math.max(peak, frequencyData[b] / 255);
-            }
-
-            // Light perceptual shaping
-            let value = Math.pow(peak * 1.15, 1.15);
-
-            // Temporal smoothing (stable)
-            const prev = this.smoothValues[i];
-            const speed = value > prev ? this.attackSpeed : this.decaySpeed;
-            const smoothed = prev + (value - prev) * speed;
-
-            // Hard silence cutoff (kills ghost bars)
-            this.smoothValues[i] = smoothed < 0.01 ? 0 : smoothed;
-
-            const barHeight = this.smoothValues[i] * barAreaHeight;
-            if (barHeight <= 0.5) continue;
-
-            const x = i * barWidth + gap * 0.5;
-            const y = height - barHeight;
-
-            ctx.fillStyle = `hsl(${210 + t * 100}, 85%, ${42 + value * 22}%)`;
-            this.roundRect(
-                ctx,
-                x,
-                y,
-                barWidth - gap,
-                barHeight,
-                radius
-            );
+        // compute peak energy
+        let peak = 0;
+        for (let b = startBin; b <= endBin; b++) {
+            peak = Math.max(peak, frequencyData[b] / 255);
         }
 
-        ctx.restore();
+        // slight perceptual shaping, less aggressive
+        let value = peak * 1.05;
+
+        // temporal smoothing with frequency-dependent speed
+        const prev = this.smoothValues[i];
+        const speed = value > prev 
+            ? 0.5 - 0.3 * t  // slower rise for low freqs
+            : 0.05 + 0.1 * t; // faster decay for high freqs
+        const smoothed = prev + (value - prev) * speed;
+
+        // hard silence cutoff
+        this.smoothValues[i] = smoothed < 0.01 ? 0 : smoothed;
+
+        // calculate bar height with minimum height enforced
+        let barHeight = this.smoothValues[i] * barAreaHeight;
+        if (barHeight > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
+
+        const x = i * barWidth + gap * 0.5;
+        const y = height - barHeight;
+
+        ctx.fillStyle = `hsl(${210 + t * 100}, 85%, ${42 + value * 22}%)`;
+        this.roundRect(ctx, x, y, barWidth - gap, barHeight, radius);
     }
+
+    ctx.restore();
+}
 
     roundRect(ctx, x, y, w, h, r) {
         if (ctx.roundRect) {
