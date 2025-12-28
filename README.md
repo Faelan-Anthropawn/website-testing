@@ -1,0 +1,1 @@
+Super early and expiremental static website music video builder.  currenyly supports live render/preview with simple text adding, visualizer bars, and a background image.  Live output makes a webm file all videos are currently rendered in 1440p at 50 fps.
