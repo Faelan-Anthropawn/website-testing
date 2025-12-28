@@ -3,70 +3,88 @@ export class PreviewPlayer {
         this.audioManager = audioManager;
         this.visualizer = visualizer;
         this.canvas = canvas;
-        this.isPlaying = false;
-        this.currentTime = 0;
-        this.audioSource = null;
-        this.analyser = null;
+        this.ctx = canvas.getContext("2d");
+
         this.audioContext = null;
+        this.source = null;
+        this.analyser = null;
+        this.dataArray = null;
+
+        this.isPlaying = false;
         this.startTime = 0;
         this.pausedTime = 0;
-        this.animationId = null;
-        this.dataArray = null;
+        this.currentTime = 0;
+        this.rafId = null;
+
+        this.backgroundImage = null;
+        this.customTexts = [];
+    }
+
+    ensureContext() {
+        if (!this.audioContext) {
+            this.audioContext =
+                this.audioManager.audioContext ||
+                new (window.AudioContext || window.webkitAudioContext)();
+        }
     }
 
     play(backgroundImage, customTexts) {
         if (this.isPlaying) return;
 
-        const audioBuffer = this.audioManager.getAudioBuffer();
-        if (!audioBuffer) {
-            alert("Please load an audio file first");
-            return;
-        }
+        const buffer = this.audioManager.getAudioBuffer();
+        if (!buffer) return;
 
-        // Create or reuse audio context
-        if (!this.audioContext) {
-            this.audioContext = this.audioManager.audioContext || new (window.AudioContext || window.webkitAudioContext)();
-        }
+        this.backgroundImage = backgroundImage;
+        this.customTexts = Array.isArray(customTexts) ? customTexts : [];
 
-        this.audioSource = this.audioContext.createBufferSource();
-        this.audioSource.buffer = audioBuffer;
+        this.ensureContext();
+
+        this.source = this.audioContext.createBufferSource();
+        this.source.buffer = buffer;
 
         this.analyser = this.audioContext.createAnalyser();
         this.analyser.fftSize = 2048;
-        this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
 
-        this.audioSource.connect(this.analyser);
+        if (!this.dataArray || this.dataArray.length !== this.analyser.frequencyBinCount) {
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+        }
+
+        this.source.connect(this.analyser);
         this.analyser.connect(this.audioContext.destination);
 
-        this.isPlaying = true;
         this.startTime = this.audioContext.currentTime - this.pausedTime;
-        this.audioSource.start(0, this.pausedTime);
+        this.source.start(0, this.pausedTime);
 
-        const textsArray = Array.isArray(customTexts) ? customTexts : [];
+        this.isPlaying = true;
 
         const render = () => {
             if (!this.isPlaying) return;
 
             this.currentTime = this.audioContext.currentTime - this.startTime;
-            this.analyser.getByteFrequencyData(this.dataArray);
+
+            if (this.currentTime >= buffer.duration) {
+                this.stop();
+                return;
+            }
+
+            const hasVisualizer = this.customTexts.some(el => el?.type === "visualizer");
+            if (hasVisualizer) {
+                this.analyser.getByteFrequencyData(this.dataArray);
+            }
 
             this.visualizer.drawFrame(
-                this.canvas.getContext("2d"),
+                this.ctx,
                 this.canvas.width,
                 this.canvas.height,
-                this.dataArray,
-                backgroundImage,
-                textsArray
+                hasVisualizer ? this.dataArray : null,
+                this.backgroundImage,
+                this.customTexts
             );
 
-            if (this.currentTime < audioBuffer.duration) {
-                this.animationId = requestAnimationFrame(render);
-            } else {
-                this.stop();
-            }
+            this.rafId = requestAnimationFrame(render);
         };
 
-        render();
+        this.rafId = requestAnimationFrame(render);
     }
 
     pause() {
@@ -75,12 +93,20 @@ export class PreviewPlayer {
         this.isPlaying = false;
         this.pausedTime = this.currentTime;
 
-        if (this.audioSource) {
-            this.audioSource.stop();
+        if (this.rafId) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
         }
 
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
+        if (this.source) {
+            try { this.source.stop(); } catch {}
+            this.source.disconnect();
+            this.source = null;
+        }
+
+        if (this.analyser) {
+            this.analyser.disconnect();
+            this.analyser = null;
         }
     }
 
@@ -91,21 +117,22 @@ export class PreviewPlayer {
     }
 
     seek(time) {
-        const audioBuffer = this.audioManager.getAudioBuffer();
-        if (!audioBuffer) return;
+        const buffer = this.audioManager.getAudioBuffer();
+        if (!buffer) return;
 
-        this.pausedTime = Math.max(0, Math.min(time, audioBuffer.duration));
-        this.currentTime = this.pausedTime;
+        const clamped = Math.max(0, Math.min(time, buffer.duration));
+        this.currentTime = clamped;
+        this.pausedTime = clamped;
 
         if (this.isPlaying) {
             this.pause();
-            this.play(this.lastBackgroundImage, this.lastCustomTexts);
+            this.play(this.backgroundImage, this.customTexts);
         }
     }
 
     setRenderData(backgroundImage, customTexts) {
-        this.lastBackgroundImage = backgroundImage;
-        this.lastCustomTexts = customTexts;
+        this.backgroundImage = backgroundImage;
+        this.customTexts = Array.isArray(customTexts) ? customTexts : [];
     }
 
     getCurrentTime() {
