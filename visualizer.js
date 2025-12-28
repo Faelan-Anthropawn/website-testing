@@ -7,11 +7,10 @@ export class Visualizer {
         this.FREQ_START_INDEX = 6;
 
         this.smoothValues = new Float32Array(this.BAR_COUNT);
-        this.barPeaks = new Float32Array(this.BAR_COUNT);
 
-        this.decaySpeed = 1.35;
-        this.attackSpeed = 0.6;
-        this.peakFalloff = 0.985;
+        // Tuned for visualizers (not meters)
+        this.attackSpeed = 0.6;   // rise speed
+        this.decaySpeed = 0.08;   // fall speed
     }
 
     drawPreview(backgroundImage, customTexts, selectedElementIndex) {
@@ -37,6 +36,9 @@ export class Visualizer {
 
         if (frequencyData && this.hasVisualizer(customTexts)) {
             this.drawBars(ctx, width, height, frequencyData);
+        } else {
+            // hard reset when visualizer disabled
+            this.smoothValues.fill(0);
         }
 
         this.drawText(ctx, width, height, customTexts);
@@ -55,43 +57,41 @@ export class Visualizer {
 
         const fftSize = frequencyData.length;
         const minBin = this.FREQ_START_INDEX;
-        const maxUsableBin = Math.floor(fftSize * 0.64);
+        const maxBin = Math.floor(fftSize * 0.6);
 
         ctx.save();
 
         for (let i = 0; i < this.BAR_COUNT; i++) {
             const t = i / (this.BAR_COUNT - 1);
 
-            const centerBin = minBin * Math.pow(
-                maxUsableBin / minBin,
-                t
-            );
+            // Log-frequency distribution
+            const centerBin = minBin * Math.pow(maxBin / minBin, t);
 
-            const binWidth = Math.max(
-                3,
-                Math.floor(centerBin * (0.08 + t * 0.18))
+            // Controlled bin width (prevents flattening)
+            const binWidth = Math.min(
+                12,
+                Math.max(2, Math.floor(4 + t * 6))
             );
-
-            let sum = 0;
-            let count = 0;
 
             const startBin = Math.max(minBin, Math.floor(centerBin - binWidth * 0.5));
-            const endBin = Math.min(maxUsableBin, startBin + binWidth);
+            const endBin = Math.min(maxBin, startBin + binWidth);
 
+            // Peak-based energy (NOT RMS)
+            let peak = 0;
             for (let b = startBin; b <= endBin; b++) {
-                const v = frequencyData[b] / 255;
-                sum += v * v;
-                count++;
+                peak = Math.max(peak, frequencyData[b] / 255);
             }
 
-            let value = count ? Math.sqrt(sum / count) : 0;
-            value *= (0.55 + t * 0.9) * 0.65;
-            value = Math.pow(value, 0.75);
+            // Light perceptual shaping
+            let value = Math.pow(peak * 1.15, 1.15);
 
+            // Temporal smoothing (stable)
             const prev = this.smoothValues[i];
-            this.smoothValues[i] = value > prev
-                ? prev + (value - prev) * this.attackSpeed
-                : prev - (prev - value) * this.decaySpeed;
+            const speed = value > prev ? this.attackSpeed : this.decaySpeed;
+            const smoothed = prev + (value - prev) * speed;
+
+            // Hard silence cutoff (kills ghost bars)
+            this.smoothValues[i] = smoothed < 0.01 ? 0 : smoothed;
 
             const barHeight = this.smoothValues[i] * barAreaHeight;
             if (barHeight <= 0.5) continue;
@@ -135,6 +135,7 @@ export class Visualizer {
         ctx.fill();
     }
 
+    // ---------- text system unchanged ----------
     buildFontString(size, font, bold, italic) {
         return `${bold ? "bold " : ""}${italic ? "italic " : ""}${size}px ${font}`;
     }
