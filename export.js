@@ -1,0 +1,103 @@
+import { AudioAnalyzer } from "./audio.js";
+
+export class ExportManager {
+    constructor(audioManager, visualizer) {
+        this.audioManager = audioManager;
+        this.visualizer = visualizer;
+    }
+
+    async renderVideo(width, height, fps, backgroundImage, customTexts, songName) {
+        const audioBuffer = this.audioManager.getAudioBuffer();
+        if (!audioBuffer) {
+            throw new Error("No audio buffer loaded");
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        const audioCtx = new AudioContext();
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+
+        const audioAnalyzer = new AudioAnalyzer(audioCtx, 2048);
+        const analyserNode = audioAnalyzer.getAnalyser();
+        const dest = audioCtx.createMediaStreamDestination();
+
+        source.connect(analyserNode);
+        analyserNode.connect(dest);
+        source.connect(audioCtx.destination); // audio playback only
+
+        const videoStream = canvas.captureStream(fps);
+        videoStream.addTrack(dest.stream.getAudioTracks()[0]);
+
+        const recorder = new MediaRecorder(videoStream, {
+            mimeType: "video/webm; codecs=vp9,opus",
+            videoBitsPerSecond: 12_000_000
+        });
+
+        const chunks = [];
+        recorder.ondataavailable = e => chunks.push(e.data);
+
+        const textsArray = Array.isArray(customTexts) ? customTexts : [];
+        const hasVisualizer = textsArray.some(el => el.type === "visualizer");
+
+        recorder.start();
+        source.start();
+
+        const startTime = audioCtx.currentTime;
+        const duration = audioBuffer.duration;
+
+        // --- fixed timestep rendering ---
+        const frameDuration = 1 / fps;
+        let lastFrameTime = 0;
+
+        return new Promise((resolve, reject) => {
+            const render = () => {
+                const t = audioCtx.currentTime - startTime;
+
+                if (t - lastFrameTime >= frameDuration) {
+                    lastFrameTime += frameDuration;
+
+                    const frequencyData = hasVisualizer ? audioAnalyzer.getFrequencyData() : null;
+
+                    this.visualizer.drawFrame(
+                        ctx,
+                        width,
+                        height,
+                        frequencyData,
+                        backgroundImage,
+                        textsArray
+                    );
+                }
+
+                if (t <= duration + frameDuration) {
+                    requestAnimationFrame(render);
+                } else {
+                    recorder.stop();
+                }
+            };
+
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: "video/webm" });
+                resolve(blob);
+            };
+
+            recorder.onerror = e => {
+                reject(new Error("Render failed: " + e.error));
+            };
+
+            render();
+        });
+    }
+
+    downloadVideo(blob, songName) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${songName || "audio"}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+}
